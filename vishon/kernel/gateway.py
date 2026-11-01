@@ -30,7 +30,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 
 class GatewayError(RuntimeError):
@@ -68,6 +68,16 @@ class Observation:
         return f"{self.url} -> {self.status} {self.content_type} {self.length}B"
 
 
+@dataclass(frozen=True)
+class _Fetch:
+    """What a transport returns before any interpretation."""
+
+    body: bytes
+    status: int
+    content_type: str
+    final_url: str
+
+
 class Gateway:
     """G_b: raw observation of reality, and nothing more."""
 
@@ -80,6 +90,7 @@ class Gateway:
         min_interval_s: float = 0.5,
         timeout_s: float = 10.0,
         user_agent: str = "vishon-gateway/1",
+        transport: "Callable[[str], _Fetch] | None" = None,
     ) -> None:
         self._domains: frozenset[str] = frozenset(d.lower() for d in allowed_domains)
         self._allow_all = allow_all
@@ -87,6 +98,10 @@ class Gateway:
         self._min_interval = min_interval_s
         self._timeout = timeout_s
         self._user_agent = user_agent
+        # The transport is a seam: the default reaches the network, and a test
+        # can substitute one that does not. Swapping it changes nothing about
+        # what the gateway does with the result, which is the point.
+        self._transport = transport
         self._last_request = 0.0
         self._key: bytes | None = None
         self._observations: int = 0
@@ -156,29 +171,24 @@ class Gateway:
             raise GatewayError(f"host {host!r} is not on the gateway allowlist")
 
         self._throttle()
-        request = urllib.request.Request(url, headers={"User-Agent": self._user_agent})
         started = time.monotonic()
-        try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
-                body = response.read(self._max_bytes)
-                status = int(response.status)
-                content_type = str(response.headers.get("Content-Type", ""))
-                final_url = str(response.geturl())
-                error = ""
-        except urllib.error.HTTPError as exc:
-            body = b""
-            status = int(exc.code)
-            content_type = str(exc.headers.get("Content-Type", "")) if exc.headers else ""
-            final_url = url
-            error = f"HTTPError {exc.code}"
-        except BaseException as exc:
-            body = b""
-            status = 0
-            content_type = ""
-            final_url = url
-            error = f"{type(exc).__name__}: {exc}"
-
+        if self._transport is None:
+            result = self._fetch_over_network(url)
+        else:
+            result = self._transport(url)
         elapsed = int((time.monotonic() - started) * 1000)
+
+        if isinstance(result, _Fetch):
+            body, status, content_type, final_url, error = (
+                result.body,
+                result.status,
+                result.content_type,
+                result.final_url,
+                "",
+            )
+        else:
+            body, status, content_type, final_url, error = result
+
         self._observations += 1
         return Observation(
             url=url,
@@ -190,6 +200,33 @@ class Gateway:
             elapsed_ms=elapsed,
             error=error,
         )
+
+    def _fetch_over_network(self, url: str):
+        """The default transport. Reaches the network and interprets nothing."""
+
+        request = urllib.request.Request(url, headers={"User-Agent": self._user_agent})
+        try:
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+                return _Fetch(
+                    body=response.read(self._max_bytes),
+                    status=int(response.status),
+                    content_type=str(response.headers.get("Content-Type", "")),
+                    final_url=str(response.geturl()),
+                )
+        except urllib.error.HTTPError as exc:
+            headers = exc.headers
+            return (
+                b"",
+                int(exc.code),
+                str(headers.get("Content-Type", "")) if headers else "",
+                url,
+                f"HTTPError {exc.code}",
+            )
+        except BaseException as exc:
+            # A transport failure is a fact about reality, not a failure of the
+            # gateway. It comes back as an observation with an error and an
+            # empty body; whether that counts as contact is not G_b's call.
+            return (b"", 0, "", url, f"{type(exc).__name__}: {exc}")
 
     def _throttle(self) -> None:
         now = time.monotonic()

@@ -262,6 +262,33 @@ def test_gateway_refuses_non_url_and_off_allowlist() -> str:
     return "non-strings and off-allowlist hosts refused"
 
 
+def test_gateway_unreachable_reality_is_not_contact() -> str:
+    from vishon.kernel.gateway import _Fetch
+
+    # A transport that cannot arrive.
+    def unreachable(url):
+        return (b"", 0, "", url, "URLError: connection refused")
+
+    env = Environment.ignite(observe_url=URL)
+    env.gateway._transport = unreachable  # type: ignore[assignment]
+
+    turn = env.loop.step()
+    assert turn.observations == 1, "a failed fetch is still an observation"
+    assert turn.observation_failures == 1
+    assert turn.observed_ok is False
+    # It is not contact, so the reality layer refuses the state.
+    assert turn.verdict == "not_viable", turn
+    assert env.ledger.contacts == 0
+    assert env.ledger.observations == 1
+
+    # And once reality is reachable, the same state is viable.
+    env.gateway._transport = lambda url: _Fetch(b"ok", 200, "text/plain", url)
+    turn = env.loop.step()
+    assert turn.verdict == "sealed", turn
+    assert env.ledger.contacts == 1
+    return "failed fetch counted as an observation, not as contact"
+
+
 def test_encoding_key_lives_only_in_state() -> str:
     env = Environment.ignite(observe_url=URL)
     key = env.substrate.state["_key"]
@@ -360,6 +387,7 @@ ALL_TESTS = [
     test_memory_rollback_never_raises_and_never_loses_a_seal,
     test_memory_records_errors_without_dying,
     test_gateway_refuses_non_url_and_off_allowlist,
+    test_gateway_unreachable_reality_is_not_contact,
     test_encoding_key_lives_only_in_state,
     test_loop_order_boundary_before_gateway,
     test_loop_delegates_every_decision,

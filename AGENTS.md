@@ -62,10 +62,17 @@ the clean root does not have it yet. That failure is handled as an error and
 rolled back — but it is a signal you are using the wrong mechanism. Use
 `rebind` in a proposal, not a top-level assignment.
 
-**The reality layer requires at least one observation.** A state with
-`ledger.observations == 0` is not viable. Any test that expects a change to be
-sealed must take the contact step first, or include `observe` in the
-modification. This catches people writing tests.
+**The reality layer requires at least one *arriving* observation.** A state with
+`ledger.contacts == 0` is not viable. A failed fetch counts as an observation
+but not as contact, so a run whose every fetch fails stays not viable and rolls
+back. Any test that expects a change to be sealed must take the contact step
+first, or include `observe` in the modification. This catches people writing
+tests.
+
+**The gateway has a transport seam.** `Gateway(transport=...)` substitutes the
+network call without changing anything about how the result is handled. Use it
+in tests so they do not depend on reality being reachable. The default
+transport is `Gateway._fetch_over_network`.
 
 **`ProgramView` is the only thing `B` and `V_P` may see.** If a rule needs to
 know something, add it to the view or the ledger. Do not pass the environment

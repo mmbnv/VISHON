@@ -46,11 +46,16 @@ class Turn:
     verdict: str            # "sealed" | "forbidden" | "not_viable" | "error"
     reasons: tuple[str, ...] = ()
     observations: int = 0
+    observation_failures: int = 0
     generation: int = 0
 
     @property
     def advanced(self) -> bool:
         return self.verdict == "sealed"
+
+    @property
+    def observed_ok(self) -> bool:
+        return self.observations > 0 and self.observation_failures == 0
 
 
 class Loop:
@@ -130,7 +135,7 @@ class Loop:
             return turn
 
         # 3. G_b: interaction with reality.
-        observations = self._observe(modification.observe)
+        observations, observation_failures = self._observe(modification.observe)
 
         # 4. V_P: viability, including the contour with the father.
         self.ledger.generations = self.memory.generation
@@ -149,6 +154,7 @@ class Loop:
                 verdict="not_viable",
                 reasons=(result.reason,),
                 observations=observations,
+                observation_failures=observation_failures,
                 generation=self.memory.generation,
             )
             self._record(turn, rollback.detail)
@@ -168,6 +174,7 @@ class Loop:
             verdict="sealed",
             reasons=(result.reason,) if result.reason else (),
             observations=observations,
+            observation_failures=observation_failures,
             generation=self.memory.generation,
         )
         self._record(turn)
@@ -194,8 +201,16 @@ class Loop:
         raw = self.substrate.call("propose")
         return Modification.from_mapping(raw)
 
-    def _observe(self, urls: tuple[str, ...]) -> int:
-        count = 0
+    def _observe(self, urls: tuple[str, ...]) -> tuple[int, int]:
+        """Attempt contact. Returns (observations, failures).
+
+        A failed fetch still produces an observation, because that is the raw
+        fact, but it is recorded as a failure so that the reality layer is not
+        satisfied by a run that never arrived anywhere.
+        """
+
+        observations = 0
+        failures = 0
         for url in urls:
             try:
                 observation = self.gateway.observe(url)
@@ -203,9 +218,13 @@ class Loop:
                 continue
             self.substrate.pin("_observation", observation)
             self.substrate.pin("_last_observation", observation)
-            self.ledger.note_observation(observation.content_type or "unknown")
-            count += 1
-        return count
+            self.ledger.note_observation(
+                observation.content_type or "unknown", ok=observation.ok
+            )
+            observations += 1
+            if not observation.ok:
+                failures += 1
+        return observations, failures
 
     def _candidate_view(self, modification: Modification) -> ProgramView:
         current = self.substrate.snapshot()

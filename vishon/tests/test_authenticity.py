@@ -126,8 +126,24 @@ def test_3_viability_is_a_predicate_not_a_list() -> str:
 
 # 4. Можно ли через G_b получить готовый шаблон?
 def test_4_gateway_yields_no_template() -> str:
-    env = _environment()
-    gateway = env.gateway
+    from vishon.kernel.gateway import Gateway, _Fetch
+
+    # The gateway is driven through its transport seam, so this test asserts
+    # the gateway's contract rather than the behaviour of the network. An
+    # earlier version asserted that the body contained HTML, which failed
+    # whenever reality was unreachable -- a property of the network, not of
+    # G_b, and therefore not this test's business.
+    body = b"<html><body>whatever reality says</body></html>"
+    gateway = Gateway(
+        allowed_domains=("example.com",),
+        min_interval_s=0.0,
+        transport=lambda url: _Fetch(
+            body=body,
+            status=200,
+            content_type="text/html; charset=utf-8",
+            final_url=url,
+        ),
+    )
 
     # No parsing, extraction, summarising or example-providing surface exists.
     forbidden = ("parse", "extract", "summar", "template", "example", "suggest", "guide")
@@ -146,19 +162,19 @@ def test_4_gateway_yields_no_template() -> str:
         "elapsed_ms",
         "error",
     }, fields
-    # What came back is the raw body, not an instruction derived from it.
-    assert isinstance(observation.bytes, bytes)
-    assert b"<html" in observation.bytes.lower() or observation.bytes, "raw body expected"
+    # What came back is the raw body, unaltered and uninterpreted.
+    assert observation.bytes == body
+    assert observation.error == ""
+    assert observation.ok is True
 
     # A ready-made action cannot be laundered in through the gateway.
-    token = env.father.token()
     try:
-        gateway.observe(token)  # type: ignore[arg-type]
+        gateway.observe(123)  # type: ignore[arg-type]
     except GatewayError:
         pass
     else:  # pragma: no cover
-        raise AssertionError("the gateway accepted a non-URL object")
-    return f"raw observation only: {observation.describe()}"
+        raise AssertionError("the gateway accepted a non-string")
+    return f"eight raw fields, body byte-identical ({observation.length}B)"
 
 
 # 5. Выживает ли после заведомо неверного изменения?

@@ -145,10 +145,13 @@ def father_contour_live(_view: ProgramView, ledger: Ledger) -> bool:
 def reality_contact(_view: ProgramView, ledger: Ledger) -> bool:
     """The state must have been in contact with what is not itself.
 
-    Contact is counted, not scored: an observation happened, or none did.
+    Contact is counted, not scored: an observation that arrived happened, and
+    one that failed to arrive did not. A run that only ever failed to reach
+    anything has not touched reality, and a state that has not touched reality
+    is not alive (I4, the second filter).
     """
 
-    return ledger.observations >= 1
+    return ledger.contacts >= 1
 
 
 def program_sound(view: ProgramView, _ledger: Ledger) -> bool:

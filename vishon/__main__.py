@@ -22,16 +22,32 @@ def _run(args: argparse.Namespace) -> int:
     print("ignited. modules:", ", ".join(env.substrate.module_names))
     print("genesis sealed at generation", env.memory.generation)
     print()
+    failures = 0
     for _ in range(args.turns):
         turn = env.step()
         mark = {"sealed": "+", "forbidden": "x", "not_viable": "x", "error": "!"}[turn.verdict]
-        line = f"[{mark}] {turn.index:>3} {turn.verdict:<10} {turn.intent or '-':<18} {turn.change}"
+        contact = ""
+        if turn.observations:
+            contact = " reached" if turn.observed_ok else " UNREACHED"
+            failures += turn.observation_failures
+        line = (
+            f"[{mark}] {turn.index:>3} {turn.verdict:<10} "
+            f"{turn.intent or '-':<18} {turn.change}{contact}"
+        )
         if turn.reasons:
             line += f"  <- {turn.reasons[0]}"
         print(line)
     print()
     for key, value in env.status().items():
         print(f"  {key}: {value}")
+    if failures:
+        print()
+        print(
+            f"  note: {failures} of {env.gateway.stats['observations']} contacts did "
+            f"not arrive. The gateway returned an error and an empty body, which "
+            f"is the raw fact; whether that counts as contact is the reality "
+            f"layer's call, and it does not."
+        )
     return 0
 
 

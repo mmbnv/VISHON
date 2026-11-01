@@ -24,9 +24,24 @@ class Ledger:
     sealed: int = 0
     rolled_back: int = 0
     observations: int = 0
+    failed_observations: int = 0
     father_acts: int = 0
     last_observation_kind: str = ""
 
-    def note_observation(self, kind: str) -> None:
+    @property
+    def contacts(self) -> int:
+        """Observations that actually reached something.
+
+        A transport failure produces an observation -- that is the raw fact --
+        but it is not contact with reality, and the reality layer must not be
+        satisfied by it. ``observations`` counts attempts; ``contacts`` counts
+        the ones that arrived.
+        """
+
+        return self.observations - self.failed_observations
+
+    def note_observation(self, kind: str, *, ok: bool = True) -> None:
         self.observations += 1
+        if not ok:
+            self.failed_observations += 1
         self.last_observation_kind = kind

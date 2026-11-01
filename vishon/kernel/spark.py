@@ -222,5 +222,7 @@ class Environment:
             + self.memory.attempt_count("not_viable"),
             "modules": self.substrate.module_names,
             "observations": self.gateway.stats["observations"],
+            "contacts": self.ledger.contacts,
+            "failed_contacts": self.ledger.failed_observations,
             "father_acts": len(self.father.journal),
         }
