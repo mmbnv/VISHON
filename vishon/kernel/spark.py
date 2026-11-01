@@ -20,6 +20,12 @@ behaviour. A program that wants to become something else has to rewrite
 The pinned names ``_key`` and ``_url`` are the only two facts the father
 supplies at start: a random key for the private encoding E (I7), and one URL
 for the first contact with reality (I4). Neither is behaviour.
+
+When the environment is used as an assistant, the father may additionally pin
+``_question``: a question he is asking. That is a fact, not a behaviour, and
+it is his -- the boundary protects it, so no change can write it. What to do
+about the question is not pinned anywhere; the program has to author that
+itself through mu (I6).
 """
 
 from __future__ import annotations
@@ -144,7 +150,13 @@ class Environment:
 
         substrate = Substrate(spark_modules())
 
-        boundary = Boundary(**({"size_cap": size_cap} if size_cap else {}))
+        boundary = Boundary(
+            **({"size_cap": size_cap} if size_cap else {}),
+            # The father's own bindings. The program may read them and may not
+            # write them (I7, I9): stealing the key would break the private
+            # encoding, and redirecting the URL would move the proving ground.
+            protect_names=("_key", "_url", "_question"),
+        )
         viability = Viability(founding_predicates())
         gateway = Gateway(
             allowed_domains=domains,

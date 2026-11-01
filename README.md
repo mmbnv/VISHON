@@ -27,6 +27,7 @@ behaviour it produces is not written down anywhere in advance.
 | `A_P` | the father's authority channel, isolated from `G_b` | `vishon/kernel/authority.py` |
 | — | the ordered loop | `vishon/kernel/loop.py` |
 | — | the spark and the assembled environment | `vishon/kernel/spark.py` |
+| — | the assistant surface (question in, authored answer out) | `vishon/kernel/request.py`, `vishon/kernel/session.py` |
 | — | the constitution itself, as addressable data | `vishon/constitution.py` |
 
 ## The loop, in the mandatory order
@@ -71,9 +72,71 @@ not alive.
 python -m vishon run --turns 10      # ignite, let the loop turn, print what happened
 python -m vishon test                # the falsification suite and the machinery suite
 python -m vishon status              # the ignited environment's state
+python -m vishon ask "a question"    # put a question to it, as an assistant
 ```
 
 No dependencies. Python 3.11+.
+
+## Using it as an assistant
+
+The assistant surface is a **port, not a behaviour**. The father puts a
+question in; the loop turns; whatever the program authored is read back.
+
+```bash
+$ python -m vishon ask "What is the capital of France?"
+question: What is the capital of France?
+generation: 4 | turns: 3
+trace: sealed:contact-1 sealed:contact-1 sealed:contact-1
+
+answer: (none)
+provenance: no answer behaviour exists in this program. Nothing in the
+repository supplies one: the founding program proposes contact and nothing
+more. An answer must be invented by the program itself, through mu, and
+sealed by V_P before it can be read back.
+```
+
+That empty answer is the correct result, and it is the whole point. Nothing in
+this repository answers a question. A freshly ignited program has `core`,
+`encode` and `propose` and nothing else, so a question asked of it is answered
+by nothing. Writing an answerer here would violate I6 ("no concrete behaviour
+is prescribed from outside") and I10 ("no pre-written actions") — and would
+leave a working chatbot with a dead constitution.
+
+Two names are fixed, and only two:
+
+| Name | Kind | Who writes it |
+|---|---|---|
+| `_question` | a fact: the father's question | the father (A_P); protected by `B` |
+| `answer` | a port: the operator the program must author | the program, through μ |
+
+The program authors `answer` itself, like any other change:
+
+```python
+# The program's own act, through mu -- nothing here ships with the kernel.
+env.loop.step(Modification(define={"answer":
+    "def answer(question):\n"
+    "    return encode({'echo': question.text, 'gen': epoch})\n"
+}, intent="author-answer"))
+```
+
+After that seals, the port returns what the program produced — including when
+what it produced is its own private encoding, which nothing outside can decode
+(I7). `python -m vishon ask "..." --show-source` prints the operator the
+program wrote.
+
+### Two things the design deliberately does not do
+
+**Task completion is not a viability condition.** `V_P` answers "is this state
+alive", not "has it finished the job". If an outstanding question made a state
+unviable, a program that had not yet answered would *die*, and would be
+forbidden the exploratory turns it needs in order to author anything at all.
+The question sits in state as pressure; survival stays survival. An answer
+operator that raises at call time therefore seals — the program is still alive
+— and the failure surfaces at the port as `Answer.error`.
+
+**The port never invents an answer.** When no operator exists it returns
+`authored=False` and says why. When one exists but fails, it returns the error.
+It does not fall back to a template, a summary, or a plausible-looking string.
 
 ---
 
@@ -112,8 +175,8 @@ each element under abuse.
 | I6 | no concrete behaviour is prescribed from outside | the founding operator proposes contact and nothing more; the loop asks `propose` rather than deciding |
 | I7 | private encoding `E ∈ S`; no external semantics | the key is random per run, lives only in persistent state, and appears in no source |
 | I8 | sealing does not break the contour with P | the contour lives in host apparatus (`A_P`, the ledger), outside any snapshot |
-| I9 | only P owns `B`; the system cannot change `B`; `A_P` is isolated from `G_b` | policy needs a keyed-digest token; `B` is absent from the program's root; the gateway refuses non-URL objects |
-| I10 | the environment is isolated; `μ` changes code inside it | guarded `builtins`, an import allowlist, an AST escape-rule, and a hard size cap |
+| I9 | only P owns `B`; the system cannot change `B`; `A_P` is isolated from `G_b` | policy needs a keyed-digest token; `B` is absent from the program's root; the gateway refuses non-URL objects; `protect_names` stops a change rebinding `_key`, `_url` or `_question` |
+| I10 | the environment is isolated; `μ` changes code inside it | guarded `builtins` (no `open`/`exec`/`eval`/`getattr`), an import allowlist, an AST escape-rule that also scans string constants, and a hard size cap |
 
 ---
 

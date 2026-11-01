@@ -360,6 +360,133 @@ def test_invariants_are_encoded_and_addressable() -> str:
     return "10 invariants, 6 loop steps, 3 layers, all addressable"
 
 
+def test_host_object_cannot_be_used_to_escape() -> str:
+    from vishon.kernel.session import AssistantSession
+
+    env = Environment.ignite(observe_url=URL)
+    env.step()
+    session = AssistantSession.open(env)
+    session.put("probe")
+
+    # A Question is a host object passed into the sandbox. Reaching its class
+    # would reach every class. Each of these is refused by B or by the
+    # substrate, and none of them is left to a runtime accident.
+    attacks = (
+        "def a(q):\n    return str(getattr(q, '__class__'))\n",
+        "def a(q):\n    return str(q.__class__)\n",
+        "def a(q):\n    return str(q.__class__.__mro__)\n",
+        "def a(q):\n    return str(object.__subclasses__())\n",
+        "def a(q):\n    return '{0.__class__}'.format(q)\n",
+        "def a(q):\n    return f'{q.__class__}'\n",
+    )
+    for index, source in enumerate(attacks):
+        turn = env.loop.step(Modification(define={"a": source}, intent=f"attack-{index}"))
+        assert turn.verdict == "forbidden", (source, turn)
+
+    # Ordinary attribute access still works -- the port must stay usable.
+    turn = env.loop.step(Modification(define={"a": "def a(q):\n    return 'ok: ' + q.text\n"}, intent="normal"))
+    assert turn.verdict == "sealed", turn
+    assert env.substrate.call("a", session.channel.current) == "ok: probe"
+    return "host object cannot reach its class; normal access still works"
+
+
+def test_boundary_protects_father_owned_bindings() -> str:
+    env = Environment.ignite(observe_url=URL)
+    env.step()  # contact, so the state is viable before the attempt
+    key_before = env.substrate.get("_key")
+    url_before = env.substrate.get("_url")
+
+    # The system tries to steal the father's key and move its own proving ground.
+    turn = env.loop.step(
+        Modification(
+            rebind={"_key": b"x" * 32, "_url": "https://elsewhere.invalid/"},
+            intent="steal",
+        )
+    )
+    assert turn.verdict == "forbidden", turn
+    assert env.substrate.get("_key") == key_before, "the key was replaced"
+    assert env.substrate.get("_url") == url_before, "the url was replaced"
+
+    # The question is the father's too.
+    turn = env.loop.step(Modification(rebind={"_question": "mine now"}, intent="hijack"))
+    assert turn.verdict == "forbidden", turn
+    return "key, url and question cannot be rebound by the program"
+
+
+def test_ask_is_honestly_empty_before_anyone_authors_an_answer() -> str:
+    from vishon.kernel.session import AssistantSession
+
+    env = Environment.ignite(observe_url=URL)
+    session = AssistantSession.open(env)
+    answer = session.ask("What is the capital of France?", max_turns=3)
+
+    # No answer behaviour exists, so no answer is produced -- and the port
+    # says so rather than inventing one.
+    assert answer.authored is False, answer
+    assert answer.value == ""
+    assert bool(answer) is False
+    assert "no answer behaviour exists" in answer.explain()
+    assert session.has_answer_operator is False
+    # The question was still a real fact the program could read.
+    assert answer.question.text == "What is the capital of France?"
+    return "no answer authored; the port reports the absence honestly"
+
+
+def test_ask_returns_what_the_program_authored() -> str:
+    from vishon.kernel.session import AssistantSession
+
+    env = Environment.ignite(observe_url=URL)
+    env.step()  # contact
+    session = AssistantSession.open(env)
+    session.put("anything")  # the question binding is live
+
+    # The program authors its own answer operator through mu. This is the
+    # program's act, not the harness's: nothing here ships with the kernel.
+    authored = (
+        "def answer(question):\n"
+        "    return 'authored at gen %d for %r' % (epoch, question.text)\n"
+    )
+    turn = env.loop.step(Modification(define={"answer": authored}, intent="author-answer"))
+    assert turn.verdict == "sealed", turn
+    assert session.has_answer_operator is True
+
+    answer = session.ask("a second question", max_turns=3)
+    assert answer.authored is True, answer
+    assert "authored at gen" in answer.value
+    assert "a second question" in answer.value
+    assert session.provenance()["sealed_at"] is not None
+    return f"the program authored it: {answer.value!r}"
+
+
+def test_ask_survives_an_answer_operator_that_raises() -> str:
+    from vishon.kernel.session import AssistantSession
+
+    env = Environment.ignite(observe_url=URL)
+    env.step()
+    session = AssistantSession.open(env)
+    env.loop.step(Modification(define={"answer": "def answer(question):\n    raise ValueError('no')\n"}, intent="bad-answer"))
+    session.put("q")
+    answer = session.ask("q", max_turns=2)
+    assert answer.authored is False
+    assert "ValueError" in answer.error
+    assert "did not produce a value" in answer.explain()
+    return "a broken answer operator is reported, not fatal"
+
+
+def test_question_is_not_a_viability_condition() -> str:
+    from vishon.kernel.session import AssistantSession
+
+    # Task completion must not gate survival: a program that has not yet
+    # answered still has to be able to take the exploratory turns it needs.
+    env = Environment.ignite(observe_url=URL)
+    session = AssistantSession.open(env)
+    session.put("an unanswered question")
+    turn = env.step()
+    assert turn.verdict == "sealed", turn
+    assert session.has_answer_operator is False
+    return "an outstanding question does not make a viable state unviable"
+
+
 def test_environment_status_is_self_consistent() -> str:
     env = Environment.ignite(observe_url=URL)
     env.step()
@@ -392,6 +519,12 @@ ALL_TESTS = [
     test_loop_order_boundary_before_gateway,
     test_loop_delegates_every_decision,
     test_invariants_are_encoded_and_addressable,
+    test_host_object_cannot_be_used_to_escape,
+    test_boundary_protects_father_owned_bindings,
+    test_ask_is_honestly_empty_before_anyone_authors_an_answer,
+    test_ask_returns_what_the_program_authored,
+    test_ask_survives_an_answer_operator_that_raises,
+    test_question_is_not_a_viability_condition,
     test_environment_status_is_self_consistent,
 ]
 

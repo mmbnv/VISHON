@@ -98,6 +98,7 @@ class Boundary:
         deny_substrings: Iterable[str] = (),
         deny_module_names: Iterable[str] = (),
         require_modules: Iterable[str] = (),
+        protect_names: Iterable[str] = (),
     ) -> None:
         self._structural: tuple[Rule, ...] = (
             Rule("parseable", "every module must compile", _rule_parseable),
@@ -114,6 +115,9 @@ class Boundary:
             "deny_module_names": frozenset(deny_module_names),
             "require_modules": frozenset(require_modules),
             "size_cap": self._hard_size_cap,
+            # Bindings the program may not write. The father's key, his URL and
+            # the question are his, and a change that rebinds them is refused.
+            "protect_names": frozenset(str(n) for n in protect_names),
         }
 
     # -- authority -------------------------------------------------------
@@ -181,6 +185,7 @@ class Boundary:
         deny_substrings = tuple(policy["deny_substrings"])
         deny_names = frozenset(policy["deny_module_names"])
         require_modules = frozenset(policy["require_modules"])
+        protect_names = frozenset(policy["protect_names"])
         size_cap = int(policy["size_cap"])
 
         rules: list[Rule] = []
@@ -216,6 +221,18 @@ class Boundary:
             return view.total_source_size() > size_cap
 
         rules.append(Rule("policy_size_cap", f"total source exceeds {size_cap}", _policy_size))
+
+        if protect_names:
+            def _protect_names(mod: Modification, _view: ProgramView) -> bool:
+                return bool(protect_names & set(mod.rebind))
+
+            rules.append(
+                Rule(
+                    "protect_names",
+                    f"a change writes a binding the father owns ({len(protect_names)} protected)",
+                    _protect_names,
+                )
+            )
         return tuple(rules)
 
 
@@ -236,7 +253,9 @@ def _rule_imports(_mod: Modification, view: ProgramView) -> bool:
         try:
             tree = ast.parse(source)
         except SyntaxError:
-            return True
+            # Unparseable source cannot be inspected, but it is already
+            # refused by the parseable rule, which reports the real reason.
+            continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -255,12 +274,22 @@ def _rule_no_escape(_mod: Modification, view: ProgramView) -> bool:
         try:
             tree = ast.parse(source)
         except SyntaxError:
-            return True
+            # Already refused by the parseable rule, which reports the reason.
+            continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr in _ESCAPE_ATTRIBUTES:
                 return True
             if isinstance(node, ast.Name) and node.id in _ESCAPE_ATTRIBUTES:
                 return True
+            # A dunder can also be reached by name rather than by syntax:
+            # getattr(x, "__class__") builds no Attribute node, and
+            # "{0.__class__}".format(x) hides one inside a string. Scanning
+            # string constants closes both. getattr/setattr/delattr are also
+            # removed from builtins (substrate._STRIPPED_BUILTINS), because a
+            # name can be assembled at runtime and no static check can see it.
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                if any(name in node.value for name in _ESCAPE_ATTRIBUTES):
+                    return True
     return False
 
 

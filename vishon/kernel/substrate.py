@@ -62,6 +62,13 @@ _STRIPPED_BUILTINS: frozenset[str] = frozenset(
         "vars",
         "memoryview",
         "__import__",
+        # These turn a *string* into an attribute access, which the boundary's
+        # AST rule cannot see. A name can be assembled at runtime, so the only
+        # sound answer is to remove the capability. Normal attribute syntax
+        # (q.text) still works and is still checked by the boundary.
+        "getattr",
+        "setattr",
+        "delattr",
     }
 )
 

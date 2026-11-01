@@ -51,6 +51,29 @@ def _run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ask(args: argparse.Namespace) -> int:
+    from vishon.kernel.session import AssistantSession
+
+    env = Environment.ignite(observe_url=args.url, allow_all=args.allow_all)
+    session = AssistantSession.open(env)
+    answer = session.ask(args.question, max_turns=args.turns)
+
+    print(f"question: {answer.question.text}")
+    print(f"generation: {answer.generation} | turns: {answer.turns}")
+    print(f"trace: {' '.join(answer.trace) if answer.trace else '-'}")
+    print()
+    if answer.authored:
+        print(f"answer (authored by the program): {answer.value}")
+    else:
+        print("answer: (none)")
+    print(f"provenance: {answer.explain()}")
+    if args.show_source and session.has_answer_operator:
+        print()
+        print("--- answer operator, as the program wrote it ---")
+        print(session.provenance()["source"])
+    return 0 if answer.authored else 1
+
+
 def _test(_args: argparse.Namespace) -> int:
     from vishon.tests import test_authenticity, test_kernel
     from vishon.tests.harness import report, run_all
@@ -81,6 +104,14 @@ def main(argv: list[str] | None = None) -> int:
 
     test = sub.add_parser("test", help="run the falsification and machinery suites")
     test.set_defaults(func=_test)
+
+    ask = sub.add_parser("ask", help="put a question to the environment as an assistant")
+    ask.add_argument("question", help="the question to put")
+    ask.add_argument("--turns", type=int, default=8, help="turns allowed before reading back")
+    ask.add_argument("--url", default=DEFAULT_URL)
+    ask.add_argument("--allow-all", action="store_true")
+    ask.add_argument("--show-source", action="store_true", help="print the answer operator")
+    ask.set_defaults(func=_ask)
 
     status = sub.add_parser("status", help="show the ignited environment's status")
     status.add_argument("--url", default=DEFAULT_URL)

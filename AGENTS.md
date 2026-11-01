@@ -37,6 +37,8 @@ vishon/kernel/memory.py      M: sealed states, attempts, rollback
 vishon/kernel/gateway.py     G_b: raw observation, nothing else
 vishon/kernel/loop.py        the ordered loop
 vishon/kernel/spark.py       the spark + Environment.ignite()
+vishon/kernel/request.py     the question/answer port: Question, Answer
+vishon/kernel/session.py     AssistantSession: ask() and provenance()
 vishon/tests/                the falsification and machinery suites
 ```
 
@@ -44,13 +46,30 @@ vishon/tests/                the falsification and machinery suites
 
 ```bash
 python -m vishon run --turns 10     # ignite and turn the loop
-python -m vishon test               # all 27 tests
+python -m vishon test               # all 28 tests
+python -m vishon ask "..."          # put a question, read back the authored answer
 python -m vishon.tests.test_authenticity
 python -m vishon.tests.test_kernel
 ```
 
 No third-party dependencies. The test harness is in `vishon/tests/harness.py`
 and is also pytest-compatible.
+
+## The assistant surface
+
+`ask()` is a **port, not a behaviour**. It puts `_question` (the father's fact,
+protected by `B`) and reads back `answer` (the program's operator, if it has
+authored one). It never supplies an answer itself.
+
+If you are tempted to "make the assistant work" by writing an answerer into the
+kernel: that is the one thing this project forbids. It would violate I6 and I10
+and the prohibition on pre-written behaviour. The empty answer is the product.
+Author it through μ, in a change, or do not have one.
+
+**Task completion is deliberately not a viability predicate.** Do not add one.
+`V_P` answers "is this state alive"; making it answer "has it finished the job"
+means a program that has not yet answered *dies*, and loses the exploratory
+turns it needs in order to author anything at all.
 
 ## Things that will bite you
 
@@ -81,6 +100,21 @@ in. That would break I9 structurally.
 **The structural boundary rules are frozen.** `Boundary._structural` is set in
 `__init__` and has no mutation path. `size_cap` in the policy layer is clamped
 to `STRUCTURAL_SIZE_CAP`.
+
+**The father's bindings are protected by policy.** `protect_names` refuses any
+change that rebinds `_key`, `_url` or `_question`. Before this
+existed, a change could steal the encoding key and redirect the gateway URL —
+verified, not theoretical. If you add another father-owned binding, add it to
+`protect_names` in `Environment.ignite`, or the program can write it.
+
+**Attribute access is checked two ways, and both are needed.** The boundary
+refuses `__class__`-style attribute *syntax* and also any string constant
+containing a dunder, because `"{0.__class__}".format(x)` hides an escape in a
+string. `getattr`, `setattr` and `delattr` are removed from builtins outright:
+a name can be assembled at runtime, and no static check can see that. This
+matters because `answer(question)` hands a *host object* into the sandbox —
+reaching its class reaches every class. Verified: `_SSLSocket` and
+`_TemporaryFileWrapper` were reachable before this was closed.
 
 **`Environment.ignite()` does not take a step.** It seals the genesis state
 and stops. Whether the loop runs is the caller's decision.
