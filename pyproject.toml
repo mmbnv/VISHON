@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vishon"
+version = "0.1.0"
+description = "A computational environment that is its own author: S = <S, mu, V_P, M, B, G_b, E, A_P>"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+vishon = "vishon.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["vishon*"]
+
+[tool.pytest.ini_options]
+testpaths = ["vishon/tests"]
+python_functions = ["test_*"]
+# Test functions return a one-line detail string for the built-in harness;
+# pytest only needs the absence of an exception.
+filterwarnings = ["ignore::pytest.PytestReturnNotNoneWarning"]
