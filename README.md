@@ -85,8 +85,8 @@ question in; the loop turns; whatever the program authored is read back.
 ```bash
 $ python -m vishon ask "What is the capital of France?"
 question: What is the capital of France?
-generation: 4 | turns: 3
-trace: sealed:contact-1 sealed:contact-1 sealed:contact-1
+generation: 3 | turns: 2
+trace: sealed:contact-1 sealed:contact-1
 
 answer: (none)
 provenance: no answer behaviour exists in this program. Nothing in the
@@ -94,6 +94,25 @@ repository supplies one: the founding program proposes contact and nothing
 more. An answer must be invented by the program itself, through mu, and
 sealed by V_P before it can be read back.
 ```
+
+If the machine has no route to reality, nothing seals — and the run says so
+instead of leaving you to guess:
+
+```bash
+$ python -m vishon ask "What is the capital of France?"
+generation: 1 | turns: 8
+trace: not_viable:contact-1 not_viable:contact-1 ...
+
+answer: (none)
+
+  note: nothing was sealed. observations: 8  contacts: 0  failed_contacts: 8
+  reality was not reached: OSError: [Errno 11001] getaddrinfo failed
+```
+
+A run with `contacts: 0` has not touched reality, so nothing it proposes can
+be viable (I4, the second filter). This is not a bug to work around: point
+`--url` at something reachable, or accept that an isolated machine cannot
+ignite. Nothing here falls back to inventing a contact.
 
 That empty answer is the correct result, and it is the whole point. Nothing in
 this repository answers a question. A freshly ignited program has `core`,

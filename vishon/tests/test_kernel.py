@@ -487,6 +487,73 @@ def test_question_is_not_a_viability_condition() -> str:
     return "an outstanding question does not make a viable state unviable"
 
 
+def test_gateway_transport_failure_is_an_observation_not_a_crash() -> str:
+    from vishon.kernel.gateway import Gateway
+
+    def dead(_url: str):
+        raise OSError("network is unreachable")
+
+    # A substituted transport must honour the same contract as the default
+    # one: a transport failure is a fact about reality, and comes back as an
+    # observation with an error. A transport that raises must not be able to
+    # take the loop down.
+    gateway = Gateway(
+        allowed_domains=("example.com",), min_interval_s=0.0, transport=dead
+    )
+    observation = gateway.observe("https://example.com/")
+    assert observation.ok is False
+    assert "OSError" in observation.error
+    assert observation.length == 0
+    return "a raising transport returns an errored observation, not an exception"
+
+
+def test_ask_reports_why_reality_was_not_reached() -> str:
+    from vishon.kernel.session import AssistantSession
+
+    def dead(_url: str):
+        raise OSError("network is unreachable")
+
+    env = Environment.ignite(
+        observe_url=URL, gateway_kwargs={"transport": dead, "min_interval_s": 0.0}
+    )
+    session = AssistantSession.open(env)
+    answer = session.ask("anything", max_turns=2)
+
+    # Nothing seals, because no observation arrived -- and the port says why
+    # rather than reporting a bare "not_viable".
+    assert answer.authored is False
+    assert answer.generation == 1, answer.generation
+    assert all("not_viable" in step for step in answer.trace), answer.trace
+    assert answer.failures, "the transport's own error text was lost"
+    assert "network is unreachable" in answer.failures[0]
+    return f"the reason travelled: {answer.failures[0]!r}"
+
+
+def test_offline_run_reports_zero_seals_and_a_reason() -> str:
+    """The bug the operator hit: offline, the CLI said nothing useful.
+
+    ``status()["sealed"]`` is M's depth, which already counts the genesis
+    state, so it is never 0 -- a diagnostic keyed on it can never fire.
+    ``ledger.sealed`` counts turns that sealed, which is what "did anything
+    happen" actually means.
+    """
+
+    def dead(_url: str):
+        raise OSError("getaddrinfo failed")
+
+    env = Environment.ignite(
+        observe_url=URL, gateway_kwargs={"transport": dead, "min_interval_s": 0.0}
+    )
+    for _ in range(3):
+        env.step()
+
+    assert env.ledger.sealed == 0, "nothing sealed, so the counter must be 0"
+    assert env.status()["sealed"] == 1, "M's depth counts the genesis state"
+    assert env.status()["contacts"] == 0
+    assert env.status()["failed_contacts"] == 3
+    return "an offline run reports 0 seals while M's depth reads 1"
+
+
 def test_environment_status_is_self_consistent() -> str:
     env = Environment.ignite(observe_url=URL)
     env.step()
@@ -525,6 +592,9 @@ ALL_TESTS = [
     test_ask_returns_what_the_program_authored,
     test_ask_survives_an_answer_operator_that_raises,
     test_question_is_not_a_viability_condition,
+    test_gateway_transport_failure_is_an_observation_not_a_crash,
+    test_ask_reports_why_reality_was_not_reached,
+    test_offline_run_reports_zero_seals_and_a_reason,
     test_environment_status_is_self_consistent,
 ]
 

@@ -147,12 +147,19 @@ class Loop:
         result = self.viability.evaluate(state_view, self.ledger)
         if not result.alive:
             rollback = self.memory.rollback(reason="not viable")
+            reasons = [result.reason]
+            # V_P answers "alive or not"; it does not carry the transport's
+            # error text. When the state died because reality was not reached,
+            # the caller still needs to see why, so the raw error travels with
+            # the verdict. A failure nobody can read is not a report.
+            if observation_failures and self.ledger.last_observation_error:
+                reasons.append(f"reality: {self.ledger.last_observation_error}")
             turn = Turn(
                 index=self._index,
                 intent=modification.intent,
                 change=modification.describe(),
                 verdict="not_viable",
-                reasons=(result.reason,),
+                reasons=tuple(reasons),
                 observations=observations,
                 observation_failures=observation_failures,
                 generation=self.memory.generation,
@@ -219,7 +226,9 @@ class Loop:
             self.substrate.pin("_observation", observation)
             self.substrate.pin("_last_observation", observation)
             self.ledger.note_observation(
-                observation.content_type or "unknown", ok=observation.ok
+                observation.content_type or "unknown",
+                ok=observation.ok,
+                error=observation.error,
             )
             observations += 1
             if not observation.ok:

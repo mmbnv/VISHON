@@ -35,7 +35,7 @@ def _run(args: argparse.Namespace) -> int:
             f"{turn.intent or '-':<18} {turn.change}{contact}"
         )
         if turn.reasons:
-            line += f"  <- {turn.reasons[0]}"
+            line += "  <- " + " | ".join(turn.reasons)
         print(line)
     print()
     for key, value in env.status().items():
@@ -62,11 +62,33 @@ def _ask(args: argparse.Namespace) -> int:
     print(f"generation: {answer.generation} | turns: {answer.turns}")
     print(f"trace: {' '.join(answer.trace) if answer.trace else '-'}")
     print()
+
     if answer.authored:
         print(f"answer (authored by the program): {answer.value}")
     else:
         print("answer: (none)")
     print(f"provenance: {answer.explain()}")
+
+    # If the loop never sealed, say why. A run that reports only "not_viable"
+    # and withholds the reason is the same defect as reporting contact that
+    # never happened: the operator cannot act on what they cannot see.
+    # ``ledger.sealed`` counts turns that sealed in this run; ``status()``
+    # counts snapshots in M, which already includes the genesis state.
+    status = env.status()
+    if env.ledger.sealed == 0:
+        print()
+        print(
+            f"  note: nothing was sealed. observations: {status['observations']}  "
+            f"contacts: {status['contacts']}  failed_contacts: {status['failed_contacts']}"
+        )
+        if answer.failures:
+            print(f"  reality was not reached: {answer.failures[0]}")
+        else:
+            print(
+                "  the reality layer needs at least one arriving observation "
+                "before any state is viable."
+            )
+
     if args.show_source and session.has_answer_operator:
         print()
         print("--- answer operator, as the program wrote it ---")

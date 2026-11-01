@@ -175,7 +175,15 @@ class Gateway:
         if self._transport is None:
             result = self._fetch_over_network(url)
         else:
-            result = self._transport(url)
+            try:
+                result = self._transport(url)
+            except BaseException as exc:
+                # A substituted transport must honour the same contract as the
+                # default one: a transport failure is a fact about reality, not
+                # an exception that escapes the gateway. Without this, a
+                # transport that raises takes the whole loop down instead of
+                # coming back as an observation with an error.
+                result = (b"", 0, "", url, f"{type(exc).__name__}: {exc}")
         elapsed = int((time.monotonic() - started) * 1000)
 
         if isinstance(result, _Fetch):

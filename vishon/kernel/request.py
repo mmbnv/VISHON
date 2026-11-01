@@ -55,6 +55,9 @@ class Answer:
     turns: int = 0
     trace: tuple[str, ...] = field(default_factory=tuple)
     error: str = ""
+    # Why reality was not reached, when it was not. Carried through so the
+    # caller can see the transport's own words instead of only a verdict.
+    failures: tuple[str, ...] = field(default_factory=tuple)
 
     def __bool__(self) -> bool:
         return self.authored

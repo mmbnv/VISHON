@@ -62,10 +62,14 @@ class AssistantSession:
         asked = self.put(question)
         env = self.environment
         trace: list[str] = []
+        failures: list[str] = []
 
         for _ in range(max_turns):
             turn = env.step()
             trace.append(f"{turn.verdict}:{turn.intent or '-'}")
+            for reason in turn.reasons:
+                if reason.startswith("reality: ") and reason not in failures:
+                    failures.append(reason[len("reality: "):])
             if env.substrate.exposes(ANSWER_OPERATOR):
                 break
 
@@ -77,6 +81,7 @@ class AssistantSession:
                 generation=env.memory.generation,
                 turns=len(trace),
                 trace=tuple(trace),
+                failures=tuple(failures),
             )
 
         try:
@@ -90,6 +95,7 @@ class AssistantSession:
                 turns=len(trace),
                 trace=tuple(trace),
                 error=f"{type(exc).__name__}: {exc}",
+                failures=tuple(failures),
             )
 
         return Answer(
@@ -99,6 +105,7 @@ class AssistantSession:
             generation=env.memory.generation,
             turns=len(trace),
             trace=tuple(trace),
+            failures=tuple(failures),
         )
 
     # -- introspection ---------------------------------------------------

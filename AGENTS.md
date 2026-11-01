@@ -119,6 +119,17 @@ reaching its class reaches every class. Verified: `_SSLSocket` and
 **`Environment.ignite()` does not take a step.** It seals the genesis state
 and stops. Whether the loop runs is the caller's decision.
 
+**`status()["sealed"]` is not "did anything happen".** It is M's depth, which
+already counts the genesis state, so it is never 0. `ledger.sealed` counts
+turns that sealed in this run, and that is what a diagnostic should key on.
+Keying on the wrong one silently disables the diagnostic — which is exactly
+how the offline case came to print `not_viable` with no explanation.
+
+**A transport that raises must not escape the gateway.** The default
+`_fetch_over_network` returns an errored observation rather than raising, and
+a substituted transport now gets the same treatment. Anything else lets a
+network failure take the whole loop down.
+
 ## When adding an invariant test
 
 Add it to `vishon/tests/test_authenticity.py` if it falsifies the *system*,

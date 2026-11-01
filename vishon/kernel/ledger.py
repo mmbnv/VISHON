@@ -27,6 +27,9 @@ class Ledger:
     failed_observations: int = 0
     father_acts: int = 0
     last_observation_kind: str = ""
+    # The error text of the most recent failed observation, so a caller can
+    # report *why* reality was not reached rather than only that it was not.
+    last_observation_error: str = ""
 
     @property
     def contacts(self) -> int:
@@ -40,8 +43,9 @@ class Ledger:
 
         return self.observations - self.failed_observations
 
-    def note_observation(self, kind: str, *, ok: bool = True) -> None:
+    def note_observation(self, kind: str, *, ok: bool = True, error: str = "") -> None:
         self.observations += 1
         if not ok:
             self.failed_observations += 1
+            self.last_observation_error = error
         self.last_observation_kind = kind
